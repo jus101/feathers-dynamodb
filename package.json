@@ -1,0 +1,12 @@
+{
+  "name": "feathers-dynamodb",
+  "version": "1.0.0",
+  "description": "Feathers AWS DynamoDB service",
+  "main": "lib/",
+  "repository": "git://github.com/jus101/feathers-dynamodb.git",
+  "author": "<jus101@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "dynamodb": "^1.0.0"
+  }
+}
