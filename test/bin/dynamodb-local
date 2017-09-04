@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+java -Djava.library.path=./test/bin/dynamodb_local_latest/DynamoDBLocal_lib -jar ./test/bin/dynamodb_local_latest/DynamoDBLocal.jar -inMemory

@@ -1,51 +1,89 @@
 const dynamo = require('dynamodb');
+const Proto = require('uberproto');
+const { pick } = require('lodash');
 
-const DEFAULT_ID_FIELD = '_id';
+const DEFAULT_ID_FIELD = 'id';
+const RESERVED_ATTRIBUTE_NAMES = require('./lib/reserved-attribute-names');
+
+const mapExpressionAttributeNames = function(names) {
+  return names.map(name => {
+    const upper = name.toUpperCase();
+    if (~RESERVED_ATTRIBUTE_NAMES.indexOf(upper)) {
+      return [`#${name}`, name];
+    } else {
+      return name;
+    }
+  });
+}
 
 class Service {
   constructor (options) {
-    if (!options) {
-      throw new Error('DynamoDB options have to be provided');
+    if (!(options && options.Model)) {
+      throw new Error('DynamoDB options and options.Model must be supplied');
     }
-
-    if (!options.schema) {
-      throw new Error('DynamoDB options must define a schema');
-    }
-
-    if (!(options.aws && options.aws.region)) {
-      throw new Error('DynamoDB requires \'aws.region\' option');
-    }
-
-    if (!options.table) {
-      throw new Error('DynamoDB requires a \'table\' option');
-    }
-
-    dynamo.AWS.config.update(options.aws);
-
     this.id = options.id || DEFAULT_ID_FIELD;
+    this.events = options.events || [];
+    this.paginate = options.paginate || {};
+    this.Model = options.Model;
+  }
 
-    const _schema = {};
-    _schema[this.id] = dynamo.types.uuid();
-
-    const model = {
-      hashKey: this.id,
-      schema: Object.assign(_schema, options.schema)
+  parseParams(_params) {
+    const params = {
+      ExpressionAttributeNames: {}
     };
 
-    if (options.rangeKey) {
-      if (!model.schema.hasOwnProperty(options.rangeKey)) {
-        throw new Error(`The rangeKey '${options.rangeKey}' is not defined in the model schema`);
-      }
+    if (_params.query && _params.query.$select && Array.isArray(_params.query.$select)) {
+      const select = _params.query.$select;
 
-      model.rangeKey = options.rangeKey;
+      if (!~select.indexOf(this.id)) select.push(this.id);
+
+      const mapped = mapExpressionAttributeNames(select);
+
+      params.ProjectionExpression = mapped.map(attr => {
+        if (Array.isArray(attr)) {
+          params.ExpressionAttributeNames[attr[0]] = attr[1];
+          return attr[0];
+        }
+        return attr;
+      }).join(', ');
     }
-    this.table = options.table;
-    this.Model = dynamo.define(options.table, Object.assign(model, options.model || {}));
+
+    if (!Object.keys(params.ExpressionAttributeNames).length) {
+      delete params.ExpressionAttributeNames;
+    }
+
+    console.log('PARAMS', params);
+
+    return params;
+  }
+
+  postSelect(doc, params) {
+    if (params.query && params.query.$select && Array.isArray(params.query.$select)) {
+      const out = pick(doc.get(), params.query.$select);
+      out[this.id] = doc.get(this.id);
+      return out;
+    }
+    return doc.get();
+  }
+
+  find(params) {
+    if (!params.query) {
+      return this.scan(params);
+    }
+  }
+
+  scan(params) {
+    return new Promise((resolve, reject) => {
+      this.Model
+        .scan()
+        .loadAll()
+        .exec()
+      });
   }
 
   get (id, params) {
     return new Promise((resolve, reject) => {
-      this.Model.get(id, params, (err, doc) => {
+      this.Model.get(id, this.parseParams(params), (err, doc) => {
         if (err) return reject(err);
         return resolve(doc ? doc.get() : undefined);
       });
@@ -77,27 +115,23 @@ class Service {
     return this.patch(id, data, params);
   }
 
-  remove(id, params) {
+  remove(id, _params) {
+    if (id === null) {
+      throw new Error('Bulk remove operation not supported');
+    }
+    const params = {};
+    params.ReturnValues = 'ALL_OLD';
+
     return new Promise((resolve, reject) => {
       this.Model.destroy(id, params, (err, doc) => {
         if (err) return reject(err);
-        return resolve(doc ? doc.get() : undefined);
+        return resolve(doc ? this.postSelect(doc, _params) : undefined);
       });
     });
   }
 
-  createTable(readCapacity = 1, writeCapacity = 1) {
-    return new Promise((resolve, reject) => {
-      const tables = {};
-      params[this.table] = { readCapacity, writeCapacity };
-      dynamo.createTables(tables, err => err ? reject(err) : resolve())
-    });
-  }
-
-  deleteTable() {
-    return new Promise((resolve, reject) => {
-      this.Model.deleteTable(err => err ? reject(err) : resolve());
-    });
+  extend (obj) {
+    return Proto.extend(obj, this);
   }
 }
 
