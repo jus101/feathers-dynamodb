@@ -1,6 +1,6 @@
 const dynamo = require('dynamodb');
 const Proto = require('uberproto');
-const { pick, isArray, map } = require('lodash');
+const { pick, isArray, map, each } = require('lodash');
 
 const DEFAULT_ID_FIELD = 'id';
 const RESERVED_ATTRIBUTE_NAMES = require('./lib/reserved-attribute-names');
@@ -69,6 +69,21 @@ class Service {
   find(params) {
     if (!params.query) {
       return this.scan(params);
+    } else {
+        const query = params.query;
+        const scan = this.Model.scan();
+        each(query, (v, k) => {
+            if (k === '$limit') {
+                return scan.limit(v);
+            }
+            return scan.where(k).equals(v);
+        });
+        return new Promise((resolve, reject) => {
+            scan.exec((error, result) => {
+                if (error) return reject(error);
+                resolve(map(result.Items, (doc) => doc.get()));
+            });
+        });
     }
   }
 
@@ -77,7 +92,10 @@ class Service {
       this.Model
         .scan()
         .loadAll()
-        .exec()
+        .exec((error, result) => {
+            if (error) return reject(err);
+            resolve(map(result.items, (doc) => doc.get()));
+        })
       });
   }
 
