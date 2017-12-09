@@ -1,6 +1,6 @@
 const dynamo = require('dynamodb');
 const Proto = require('uberproto');
-const { pick } = require('lodash');
+const { pick, isArray } = require('lodash');
 
 const DEFAULT_ID_FIELD = 'id';
 const RESERVED_ATTRIBUTE_NAMES = require('./lib/reserved-attribute-names');
@@ -94,7 +94,7 @@ class Service {
     return new Promise((resolve, reject) => {
       this.Model.create(data, (err, doc) => {
         if (err) return reject(err);
-        return resolve(doc ? doc.get() : undefined);
+        return resolve(doc ? (isArray(doc)? _.map(doc, (d) => d.get()) : doc.get() ): undefined);
       });
     });
   }
