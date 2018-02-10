@@ -110,7 +110,7 @@ class Service {
 
   create (data, params) {
     return new Promise((resolve, reject) => {
-      this.Model.create(data, (err, doc) => {
+      this.Model.create(data, params, (err, doc) => {
         if (err) return reject(err);
         return resolve(doc ? (isArray(doc)? map(doc, (d) => d.get()) : doc.get() ): undefined);
       });
